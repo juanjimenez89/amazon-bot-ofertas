@@ -29,7 +29,10 @@ SEARCHES = [
     "herramientas",
     "juguetes",
     "computadora",
-    "oficina"
+    "oficina",
+    "cocina",
+    "gaming",
+    "celular"
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -51,17 +54,26 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def extract_price(text):
+def extract_prices(text):
     prices = re.findall(r"\$[\d,]+\.?\d*", text)
-    if prices:
+    if len(prices) >= 2:
         try:
-            return float(prices[0].replace("$","").replace(",",""))
+            old_price = float(prices[0].replace("$","").replace(",",""))
+            new_price = float(prices[1].replace("$","").replace(",",""))
+            return old_price, new_price
         except:
-            return None
-    return None
+            return None, None
+    return None, None
+
+def extract_coupon(text):
+    match = re.search(r"(\d+)%", text)
+    if match:
+        return int(match.group(1))
+    return 0
 
 def check():
     headers = {"User-Agent": "Mozilla/5.0"}
+    scanned = 0
 
     for search in SEARCHES:
         for page in PAGES:
@@ -77,38 +89,65 @@ def check():
                     asin = item.get("data-asin")
                     text = item.get_text(" ", strip=True)
 
-                    price = extract_price(text)
+                    price = extract_prices(text)
+                    coupon = extract_coupon(text)
 
-                    if not price:
-                        continue
+                    scanned += 1
 
-                    if asin in prices_db:
-                        old_price = prices_db[asin]
+                    # detectar descuento visible
+                    if price[0] and price[1]:
+                        old_price, new_price = price
+                        discount = int((old_price - new_price) / old_price * 100)
 
-                        if old_price <= 0:
-                            continue
-
-                        discount = int((old_price - price) / old_price * 100)
-
-                        if discount >= 60 and asin not in sent:
+                        if discount >= 55 and asin not in sent:
                             sent.add(asin)
 
                             send(
-                                f"🔥 {discount}% OFF detectado\n"
-                                f"💰 ${price} antes ${old_price}\n\n"
+                                f"🔥 {discount}% OFF\n"
+                                f"💰 ${new_price} antes ${old_price}\n\n"
                                 f"🔗 https://www.amazon.com.mx/dp/{asin}"
                             )
 
-                    prices_db[asin] = price
+                    # detectar bajada histórica
+                    if asin in prices_db and price[1]:
+                        old = prices_db[asin]
+                        new = price[1]
+
+                        if old > 0:
+                            drop = int((old - new) / old * 100)
+
+                            if drop >= 55 and asin not in sent:
+                                sent.add(asin)
+
+                                send(
+                                    f"⚡ Bajada {drop}%\n"
+                                    f"💰 ${new} antes ${old}\n\n"
+                                    f"🔗 https://www.amazon.com.mx/dp/{asin}"
+                                )
+
+                    # detectar cupon
+                    if coupon >= 20 and asin not in sent:
+                        sent.add(asin)
+
+                        send(
+                            f"🎟️ Cupón {coupon}% detectado\n"
+                            f"🔗 https://www.amazon.com.mx/dp/{asin}"
+                        )
+
+                    # guardar precio actual
+                    if price[1]:
+                        prices_db[asin] = price[1]
 
             except:
                 pass
 
     save_db()
 
+    send(f"📊 Monitoreando {len(prices_db)} productos | Escaneados {scanned}")
+
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot FINAL monitoreando todo Amazon")
+send("🚀 Bot PRO 55% + cupones + bajadas activo")
 
 while True:
     check()
