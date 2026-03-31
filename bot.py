@@ -23,14 +23,11 @@ sent = set()
 
 SEARCH_URL = "https://www.amazon.com.mx/s?k="
 
-SEARCHES = [
-    "a","b","c","d","e","oferta","descuento","cupon"
-]
+SEARCHES = ["a","b","c","oferta","descuento","cupon"]
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 ]
 
 session = requests.Session()
@@ -49,35 +46,37 @@ def save_db():
         json.dump(prices_db,f)
 
 def send(msg):
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        data={"chat_id": CHAT_ID, "text": msg}
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=10
+        )
+    except:
+        pass
 
 def headers():
     return {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept-Language": "es-MX,es;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Referer": "https://www.amazon.com.mx/",
+        "Referer": "https://www.amazon.com.mx/"
     }
 
 def get_price(asin):
     try:
-        url = f"https://www.amazon.com.mx/dp/{asin}"
-        r = session.get(url, headers=headers(), timeout=20)
+        r = session.get(
+            f"https://www.amazon.com.mx/dp/{asin}",
+            headers=headers(),
+            timeout=8
+        )
         soup = BeautifulSoup(r.text, "html.parser")
 
-        selectors = [
+        for sel in [
             "#priceblock_dealprice",
             "#priceblock_ourprice",
             "#priceblock_saleprice",
-            "#corePriceDisplay_desktop_feature_div .a-offscreen"
-        ]
-
-        for sel in selectors:
+            ".a-price .a-offscreen"
+        ]:
             el = soup.select_one(sel)
             if el:
                 m = re.search(r"\$[\d,]+\.?\d*", el.text)
@@ -90,15 +89,24 @@ def get_price(asin):
     return None
 
 def check():
+    compared = 0
+
     for search in SEARCHES:
         try:
-            r = session.get(SEARCH_URL + search, headers=headers(), timeout=20)
+            r = session.get(
+                SEARCH_URL + search,
+                headers=headers(),
+                timeout=8
+            )
+
             asins = re.findall(r'data-asin="([A-Z0-9]{10})"', r.text)
 
-            for asin in asins[:10]:
+            for asin in asins[:8]:
                 price = get_price(asin)
                 if not price:
                     continue
+
+                compared += 1
 
                 if asin in prices_db:
                     old = prices_db[asin]
@@ -113,19 +121,21 @@ def check():
                         )
 
                 prices_db[asin] = price
-
-                time.sleep(random.uniform(3,5))
+                time.sleep(random.uniform(1.5,3))
 
         except:
-            pass
+            continue
 
     save_db()
-    send(f"📊 Comparados {len(prices_db)}")
+    send(f"📊 Comparados {compared}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 BOT FINAL REAL activo")
+send("🚀 BOT ESTABLE REAL activo")
 
 while True:
-    check()
+    try:
+        check()
+    except:
+        send("⚠️ reinicio automático")
     time.sleep(180)
