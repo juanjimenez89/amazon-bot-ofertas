@@ -31,9 +31,9 @@ SEARCHES = [
 ]
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    "Mozilla/5.0 (X11; Linux x86_64)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -58,12 +58,18 @@ def send(msg):
 def get_price_and_coupon(asin):
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept-Language": "es-MX,es;q=0.9"
+        "Accept-Language": "es-MX,es;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://www.amazon.com.mx/",
+        "DNT": "1"
     }
 
     try:
         url = f"https://www.amazon.com.mx/dp/{asin}"
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=20)
+
         soup = BeautifulSoup(r.text, "html.parser")
 
         price = None
@@ -104,11 +110,11 @@ def check():
         }
 
         try:
-            r = requests.get(SEARCH_URL + search, headers=headers, timeout=15)
+            r = requests.get(SEARCH_URL + search, headers=headers, timeout=20)
 
             asins = re.findall(r'data-asin="([A-Z0-9]{10})"', r.text)
 
-            for asin in asins[:10]:
+            for asin in asins[:12]:
                 price, coupon = get_price_and_coupon(asin)
 
                 if not price:
@@ -122,9 +128,7 @@ def check():
                     old = prices_db[asin]
                     discount = int((old - price) / old * 100)
 
-                coupon_discount = coupon
-
-                total_discount = discount + coupon_discount
+                total_discount = discount + coupon
 
                 if total_discount >= 55 and asin not in sent:
                     sent.add(asin)
@@ -138,7 +142,7 @@ def check():
 
                 prices_db[asin] = price
 
-                time.sleep(random.uniform(1,2))
+                time.sleep(random.uniform(2.5,4.5))
 
         except:
             pass
@@ -149,7 +153,7 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRECISIÓN FINAL activo")
+send("🚀 Bot PRECISIÓN FINAL ANTI-BLOQUEO activo")
 
 while True:
     check()
