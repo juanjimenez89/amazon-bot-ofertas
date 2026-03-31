@@ -1,22 +1,15 @@
 import time
 import requests
+from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
-import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
 sent = set()
 
-FEEDS = [
-    "https://www.amazon.com.mx/gp/goldbox",
-    "https://www.amazon.com.mx/deals",
-    "https://www.amazon.com.mx/s?k=ofertas",
-    "https://www.amazon.com.mx/s?k=cupon",
-    "https://www.amazon.com.mx/s?k=rebajas",
-    "https://www.amazon.com.mx/s?k=liquidacion",
-]
+URL = "https://www.amazon.com.mx/s?k=ofertas"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -38,34 +31,37 @@ def check():
         "User-Agent": "Mozilla/5.0"
     }
 
-    for url in FEEDS:
-        try:
-            r = requests.get(url, headers=headers, timeout=15)
+    try:
+        r = requests.get(URL, headers=headers, timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-            if "%" in r.text.lower() or "cupón" in r.text.lower():
-                key = url + str(random.randint(1,1000))
+        for item in soup.select("[data-asin]"):
+            asin = item.get("data-asin")
 
-                if key in sent:
-                    continue
+            if not asin or asin in sent:
+                continue
 
-                sent.add(key)
+            text = item.get_text(" ", strip=True).lower()
 
-                send(
-                    "🔥 Posible oferta detectada\n\n"
-                    "Incluye:\n"
-                    "• cupón\n"
-                    "• oferta relámpago\n"
-                    "• posible error de precio\n\n"
-                    f"🔗 {url}"
-                )
+            if "%" not in text and "cupón" not in text:
+                continue
 
-        except:
-            pass
+            sent.add(asin)
+
+            link = f"https://www.amazon.com.mx/dp/{asin}"
+
+            send(
+                "🔥 Oferta detectada\n\n"
+                f"🔗 {link}"
+            )
+
+    except:
+        pass
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot Amazon México PRO activo")
+send("🚀 Bot productos específicos activo")
 
 while True:
     check()
-    time.sleep(random.randint(120,240))
+    time.sleep(180)
