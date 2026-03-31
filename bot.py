@@ -61,6 +61,7 @@ def check_deals():
 threading.Thread(target=run_server).start()
 
 print("Amazon bot iniciado")
+send_telegram("🤖 Bot activo y monitoreando ofertas...")
 
 while True:
     check_deals()
