@@ -45,6 +45,12 @@ def extract_price(text):
             return None, None
     return None, None
 
+def extract_coupon(text):
+    percent = re.search(r"(\d+)%", text)
+    if percent:
+        return int(percent.group(1))
+    return 0
+
 def check_deals():
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -61,7 +67,6 @@ def check_deals():
 
                 text = item.get_text(" ", strip=True).lower()
 
-                # filtro enviado por amazon
                 if "amazon" not in text:
                     continue
 
@@ -70,9 +75,15 @@ def check_deals():
                 if not old_price or not new_price:
                     continue
 
-                discount = int((old_price - new_price) / old_price * 100)
+                base_discount = int((old_price - new_price) / old_price * 100)
+                coupon = extract_coupon(text)
+                total_discount = base_discount + coupon
 
-                if discount < 70:
+                if not (
+                    total_discount >= 60
+                    or base_discount >= 50
+                    or coupon >= 20
+                ):
                     continue
 
                 sent_items.add(asin)
@@ -80,8 +91,9 @@ def check_deals():
                 link = f"https://www.amazon.com.mx/dp/{asin}"
 
                 msg = (
-                    f"🔥 {discount}% OFF\n"
-                    f"💰 ${new_price} antes ${old_price}\n\n"
+                    f"🔥 {total_discount}% OFF\n"
+                    f"💰 ${new_price} antes ${old_price}\n"
+                    f"🎟️ Cupón: {coupon}%\n\n"
                     f"🔗 {link}"
                 )
 
@@ -94,7 +106,7 @@ def check_deals():
 threading.Thread(target=run_server).start()
 
 print("Amazon bot PRO iniciado")
-send_telegram("🚀 Bot PRO activo: Enviado por Amazon + 70% real + cupones")
+send_telegram("🚀 Bot PRO activo: 60% total + cupones + enviado por Amazon")
 
 while True:
     check_deals()
