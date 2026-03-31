@@ -2,24 +2,18 @@ import time
 import requests
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import random
+import re
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
-# Fuentes de ofertas (no bloqueadas fácilmente)
-FEEDS = [
-    "https://www.amazon.com.mx/gp/goldbox",
-    "https://www.amazon.com.mx/gp/goldbox?dealTypes=LIGHTNING_DEAL",
-    "https://www.amazon.com.mx/gp/goldbox?dealTypes=BEST_DEAL"
-]
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-]
-
 sent = set()
+
+# Fuentes externas confiables
+SOURCES = [
+    "https://api.allorigins.win/raw?url=https://www.ofertitas.com.mx",
+    "https://api.allorigins.win/raw?url=https://www.promodescuentos.com"
+]
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -40,39 +34,48 @@ def send(msg):
     except:
         pass
 
+def extract_discount(text):
+    m = re.search(r'(\d{2})\s?%', text)
+    if m:
+        return int(m.group(1))
+    return 0
+
 def check():
-    found = 0
-    for url in FEEDS:
+    total = 0
+
+    for url in SOURCES:
         try:
-            r = requests.get(
-                url,
-                headers={"User-Agent": random.choice(USER_AGENTS)},
-                timeout=10
-            )
+            r = requests.get(url, timeout=15)
+            html = r.text
 
-            # buscar descuentos directos
-            lines = r.text.split("\n")
+            # buscar links Amazon
+            links = re.findall(r'https://www\.amazon\.com\.mx[^\s"]+', html)
 
-            for line in lines:
-                if "%" in line and "OFF" in line.upper():
-                    try:
-                        pct = int("".join([c for c in line if c.isdigit()])[:2])
-                        if pct >= 60:
-                            found += 1
-                            if line not in sent:
-                                sent.add(line)
-                                send(f"🔥 Oferta detectada ~{pct}%\nVer Amazon")
-                    except:
-                        pass
+            for link in links:
+                if link in sent:
+                    continue
+
+                # buscar descuento cercano
+                snippet = html[max(0, html.find(link)-100):html.find(link)+100]
+                discount = extract_discount(snippet)
+
+                if discount >= 60:
+                    sent.add(link)
+                    total += 1
+
+                    send(
+                        f"🔥 {discount}% OFF detectado\n"
+                        f"🛒 {link}"
+                    )
 
         except:
             pass
 
-    send(f"📊 Revisadas ofertas | detectadas {found}")
+    send(f"📊 Revisadas | nuevas {total}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot ofertas reales activo")
+send("🚀 Bot OFERTAS AMAZON activo")
 
 while True:
     try:
