@@ -8,8 +8,8 @@ import json
 import os
 import random
 
-TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
-CHAT_ID = "-1003785044780"
+TELEGRAM_TOKEN = "TU_TOKEN"
+CHAT_ID = "TU_CHAT_ID"
 
 DB_FILE = "prices.json"
 
@@ -21,13 +21,16 @@ else:
 
 sent = set()
 
-SEARCH_URL = "https://www.amazon.com.mx/s?k="
-
-SEARCHES = ["a","b","c","oferta","descuento","cupon"]
+URLS = [
+    "https://www.amazon.com.mx/gp/goldbox",
+    "https://www.amazon.com.mx/gp/bestsellers",
+    "https://www.amazon.com.mx/gp/new-releases",
+    "https://www.amazon.com.mx/gp/most-wished-for"
+]
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 ]
 
 session = requests.Session()
@@ -41,47 +44,30 @@ class Handler(BaseHTTPRequestHandler):
 def run_server():
     HTTPServer(('',10000), Handler).serve_forever()
 
-def save_db():
-    with open(DB_FILE,"w") as f:
-        json.dump(prices_db,f)
-
 def send(msg):
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10
+            data={"chat_id": CHAT_ID, "text": msg}
         )
     except:
         pass
-
-def headers():
-    return {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept-Language": "es-MX,es;q=0.9",
-        "Referer": "https://www.amazon.com.mx/"
-    }
 
 def get_price(asin):
     try:
         r = session.get(
             f"https://www.amazon.com.mx/dp/{asin}",
-            headers=headers(),
-            timeout=8
+            headers={"User-Agent": random.choice(USER_AGENTS)},
+            timeout=10
         )
+
         soup = BeautifulSoup(r.text, "html.parser")
 
-        for sel in [
-            "#priceblock_dealprice",
-            "#priceblock_ourprice",
-            "#priceblock_saleprice",
-            ".a-price .a-offscreen"
-        ]:
-            el = soup.select_one(sel)
-            if el:
-                m = re.search(r"\$[\d,]+\.?\d*", el.text)
-                if m:
-                    return float(m.group().replace("$","").replace(",",""))
+        el = soup.select_one(".a-price .a-offscreen")
+        if el:
+            m = re.search(r"\$[\d,]+\.?\d*", el.text)
+            if m:
+                return float(m.group().replace("$","").replace(",",""))
 
     except:
         pass
@@ -91,17 +77,12 @@ def get_price(asin):
 def check():
     compared = 0
 
-    for search in SEARCHES:
+    for url in URLS:
         try:
-            r = session.get(
-                SEARCH_URL + search,
-                headers=headers(),
-                timeout=8
-            )
-
+            r = session.get(url, headers={"User-Agent": random.choice(USER_AGENTS)}, timeout=10)
             asins = re.findall(r'data-asin="([A-Z0-9]{10})"', r.text)
 
-            for asin in asins[:8]:
+            for asin in asins[:15]:
                 price = get_price(asin)
                 if not price:
                     continue
@@ -121,21 +102,20 @@ def check():
                         )
 
                 prices_db[asin] = price
-                time.sleep(random.uniform(1.5,3))
+                time.sleep(random.uniform(2,4))
 
         except:
-            continue
+            pass
 
-    save_db()
+    with open(DB_FILE,"w") as f:
+        json.dump(prices_db,f)
+
     send(f"📊 Comparados {compared}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 BOT ESTABLE REAL activo")
+send("🚀 BOT AMAZON FUENTES REALES activo")
 
 while True:
-    try:
-        check()
-    except:
-        send("⚠️ reinicio automático")
+    check()
     time.sleep(180)
