@@ -54,15 +54,30 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def extract_prices(text):
-    prices = re.findall(r"\$[\d,]+\.?\d*", text)
+def extract_prices_from_item(item):
+    prices = []
+
+    for span in item.select("span.a-price"):
+        whole = span.select_one("span.a-price-whole")
+        fraction = span.select_one("span.a-price-fraction")
+
+        if whole:
+            price = whole.text.replace(",", "")
+            if fraction:
+                price += "." + fraction.text
+
+            try:
+                prices.append(float(price))
+            except:
+                pass
+
     if len(prices) >= 2:
-        try:
-            old_price = float(prices[0].replace("$","").replace(",",""))
-            new_price = float(prices[1].replace("$","").replace(",",""))
+        old_price = max(prices)
+        new_price = min(prices)
+
+        if old_price > new_price:
             return old_price, new_price
-        except:
-            return None, None
+
     return None, None
 
 def extract_coupon(text):
@@ -96,12 +111,12 @@ def check():
 
                     text = item.get_text(" ", strip=True)
 
-                    price = extract_prices(text)
+                    price = extract_prices_from_item(item)
                     coupon = extract_coupon(text)
 
                     scanned += 1
 
-                    if price[0] and price[1]:
+                    if price:
                         old_price, new_price = price
                         discount = int((old_price - new_price) / old_price * 100)
 
@@ -114,7 +129,7 @@ def check():
                                 f"🔗 https://www.amazon.com.mx/dp/{asin}"
                             )
 
-                    if asin in prices_db and price[1]:
+                    if asin in prices_db and price:
                         old = prices_db[asin]
                         new = price[1]
 
@@ -138,7 +153,7 @@ def check():
                             f"🔗 https://www.amazon.com.mx/dp/{asin}"
                         )
 
-                    if price[1]:
+                    if price:
                         prices_db[asin] = price[1]
 
             except:
@@ -150,7 +165,7 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRO definitivo activo")
+send("🚀 Bot PRO precios corregidos activo")
 
 while True:
     check()
