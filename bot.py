@@ -72,7 +72,11 @@ def extract_coupon(text):
     return 0
 
 def check():
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept-Language": "es-MX,es;q=0.9"
+    }
+
     scanned = 0
 
     for search in SEARCHES:
@@ -83,10 +87,13 @@ def check():
                 r = requests.get(url, headers=headers, timeout=15)
                 soup = BeautifulSoup(r.text, "html.parser")
 
-                items = soup.select("[data-asin]")
+                items = soup.select("div.s-result-item")
 
                 for item in items:
                     asin = item.get("data-asin")
+                    if not asin:
+                        continue
+
                     text = item.get_text(" ", strip=True)
 
                     price = extract_prices(text)
@@ -94,7 +101,6 @@ def check():
 
                     scanned += 1
 
-                    # detectar descuento visible
                     if price[0] and price[1]:
                         old_price, new_price = price
                         discount = int((old_price - new_price) / old_price * 100)
@@ -108,7 +114,6 @@ def check():
                                 f"🔗 https://www.amazon.com.mx/dp/{asin}"
                             )
 
-                    # detectar bajada histórica
                     if asin in prices_db and price[1]:
                         old = prices_db[asin]
                         new = price[1]
@@ -125,7 +130,6 @@ def check():
                                     f"🔗 https://www.amazon.com.mx/dp/{asin}"
                                 )
 
-                    # detectar cupon
                     if coupon >= 20 and asin not in sent:
                         sent.add(asin)
 
@@ -134,7 +138,6 @@ def check():
                             f"🔗 https://www.amazon.com.mx/dp/{asin}"
                         )
 
-                    # guardar precio actual
                     if price[1]:
                         prices_db[asin] = price[1]
 
@@ -147,7 +150,7 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRO 55% + cupones + bajadas activo")
+send("🚀 Bot PRO definitivo activo")
 
 while True:
     check()
