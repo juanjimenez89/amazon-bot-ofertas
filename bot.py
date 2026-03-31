@@ -1,28 +1,39 @@
 import time
 import requests
+from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import re
+import json
+import os
 import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
+DB_FILE = "prices.json"
+
+if os.path.exists(DB_FILE):
+    with open(DB_FILE,"r") as f:
+        prices_db = json.load(f)
+else:
+    prices_db = {}
+
 sent = set()
 
-URLS = [
-    "https://www.amazon.com.mx/s?k=ofertas",
-    "https://www.amazon.com.mx/s?k=descuentos",
-    "https://www.amazon.com.mx/s?k=cupon",
-    "https://www.amazon.com.mx/s?k=rebaja",
-    "https://www.amazon.com.mx/gp/goldbox"
+SEARCH_URL = "https://www.amazon.com.mx/s?k="
+
+SEARCHES = [
+    "a",
+    "oferta",
+    "descuento",
+    "cupon"
 ]
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    "Mozilla/5.0 (X11; Linux x86_64)",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
+    "Mozilla/5.0 (X11; Linux x86_64)"
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -34,76 +45,124 @@ class Handler(BaseHTTPRequestHandler):
 def run_server():
     HTTPServer(('',10000), Handler).serve_forever()
 
+def save_db():
+    with open(DB_FILE,"w") as f:
+        json.dump(prices_db,f)
+
 def send(msg):
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def extract_prices(text):
-    prices = re.findall(r"\$[\d,]+\.?\d*", text)
-    values = []
+def get_price_and_coupon(asin):
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept-Language": "es-MX,es;q=0.9"
+    }
 
-    for p in prices:
-        try:
-            values.append(float(p.replace("$","").replace(",","")))
-        except:
-            pass
+    try:
+        url = f"https://www.amazon.com.mx/dp/{asin}"
+        r = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
 
-    if len(values) >= 2:
-        return max(values), min(values)
+        price = None
 
-    return None
+        selectors = [
+            "#priceblock_ourprice",
+            "#priceblock_dealprice",
+            ".a-price .a-offscreen"
+        ]
+
+        for sel in selectors:
+            el = soup.select_one(sel)
+            if el:
+                match = re.search(r"\$[\d,]+\.?\d*", el.text)
+                if match:
+                    price = float(match.group().replace("$","").replace(",",""))
+                    break
+
+        coupon = 0
+
+        text = soup.get_text(" ", strip=True)
+
+        percent = re.search(r"(\d+)%", text)
+        if percent:
+            coupon = int(percent.group(1))
+
+        money = re.search(r"\$([\d,]+)", text)
+        if money and not coupon:
+            try:
+                coupon = int(float(money.group(1).replace(",","")))
+            except:
+                pass
+
+        return price, coupon
+
+    except:
+        return None, 0
 
 def check():
-    total = 0
+    scanned = 0
 
-    for url in URLS:
+    for search in SEARCHES:
         headers = {
-            "User-Agent": random.choice(USER_AGENTS),
-            "Accept-Language": "es-MX,es;q=0.9"
+            "User-Agent": random.choice(USER_AGENTS)
         }
 
         try:
-            r = requests.get(url, headers=headers, timeout=20)
-            text = r.text
+            r = requests.get(SEARCH_URL + search, headers=headers, timeout=15)
 
-            blocks = text.split("data-asin")
+            asins = re.findall(r'data-asin="([A-Z0-9]{10})"', r.text)
 
-            for block in blocks:
-                asin_match = re.search(r'([A-Z0-9]{10})', block)
-                if not asin_match:
+            for asin in asins[:10]:
+                price, coupon = get_price_and_coupon(asin)
+
+                if not price:
                     continue
 
-                asin = asin_match.group(1)
+                scanned += 1
 
-                price = extract_prices(block)
+                discount = 0
 
-                total += 1
+                if asin in prices_db:
+                    old = prices_db[asin]
+                    discount = int((old - price) / old * 100)
 
-                if price:
-                    old_price, new_price = price
-                    discount = int((old_price - new_price) / old_price * 100)
+                coupon_discount = 0
 
-                    if discount >= 55 and asin not in sent:
-                        sent.add(asin)
+                if coupon:
+                    if coupon < 100:
+                        coupon_discount = coupon
+                    else:
+                        coupon_discount = int(coupon / price * 100)
 
-                        send(
-                            f"🔥 {discount}% OFF\n"
-                            f"💰 ${new_price} antes ${old_price}\n\n"
-                            f"https://www.amazon.com.mx/dp/{asin}"
-                        )
+                total_discount = discount + coupon_discount
 
-            time.sleep(random.uniform(2,4))
+                if total_discount >= 55 and asin not in sent:
+                    sent.add(asin)
+
+                    send(
+                        f"🔥 {total_discount}% TOTAL\n"
+                        f"💰 ${price}\n"
+                        f"🎟️ Cupón {coupon}%\n\n"
+                        f"https://www.amazon.com.mx/dp/{asin}"
+                    )
+
+                prices_db[asin] = price
+
+                time.sleep(random.uniform(1,2))
 
         except:
             pass
 
-    send(f"📊 Revisados {total} productos")
+    save_db()
+
+    send(f"📊 Productos comparados {len(prices_db)}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot estable final activo")
+send("🚀 Bot PRECISIÓN precios reales activo")
 
 while True:
     check()
