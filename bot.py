@@ -69,9 +69,10 @@ def get_price_and_coupon(asin):
         price = None
 
         selectors = [
-            "#priceblock_ourprice",
             "#priceblock_dealprice",
-            ".a-price .a-offscreen"
+            "#priceblock_ourprice",
+            "#priceblock_saleprice",
+            "#corePriceDisplay_desktop_feature_div .a-offscreen"
         ]
 
         for sel in selectors:
@@ -83,19 +84,11 @@ def get_price_and_coupon(asin):
                     break
 
         coupon = 0
-
         text = soup.get_text(" ", strip=True)
 
         percent = re.search(r"(\d+)%", text)
         if percent:
             coupon = int(percent.group(1))
-
-        money = re.search(r"\$([\d,]+)", text)
-        if money and not coupon:
-            try:
-                coupon = int(float(money.group(1).replace(",","")))
-            except:
-                pass
 
         return price, coupon
 
@@ -129,13 +122,7 @@ def check():
                     old = prices_db[asin]
                     discount = int((old - price) / old * 100)
 
-                coupon_discount = 0
-
-                if coupon:
-                    if coupon < 100:
-                        coupon_discount = coupon
-                    else:
-                        coupon_discount = int(coupon / price * 100)
+                coupon_discount = coupon
 
                 total_discount = discount + coupon_discount
 
@@ -162,7 +149,7 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRECISIÓN precios reales activo")
+send("🚀 Bot PRECISIÓN FINAL activo")
 
 while True:
     check()
