@@ -13,6 +13,13 @@ sent_items = set()
 URLS = [
     "https://www.amazon.com.mx/gp/goldbox",
     "https://www.amazon.com.mx/deals",
+    "https://www.amazon.com.mx/gp/goldbox?ref_=nav_cs_gb",
+    "https://www.amazon.com.mx/deals?ref_=nav_cs_deals",
+    "https://www.amazon.com.mx/s?i=electronics&rh=p_n_deal_type%3A23566065011",
+    "https://www.amazon.com.mx/s?i=home&rh=p_n_deal_type%3A23566065011",
+    "https://www.amazon.com.mx/s?i=fashion&rh=p_n_deal_type%3A23566065011",
+    "https://www.amazon.com.mx/s?i=toys&rh=p_n_deal_type%3A23566065011",
+    "https://www.amazon.com.mx/s?k=cupon",
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -106,7 +113,7 @@ def check_deals():
 threading.Thread(target=run_server).start()
 
 print("Amazon bot PRO iniciado")
-send_telegram("🚀 Bot PRO activo: 60% total + cupones + enviado por Amazon")
+send_telegram("🚀 Bot PRO MAX activo: más fuentes + 60% + cupones + enviado por Amazon")
 
 while True:
     check_deals()
