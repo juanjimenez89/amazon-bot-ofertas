@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+import re
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
@@ -27,14 +28,22 @@ def run_server():
 
 def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": msg
-    }
+    data = {"chat_id": CHAT_ID, "text": msg}
     try:
         requests.post(url, data=data)
     except:
         pass
+
+def extract_price(text):
+    match = re.findall(r"\$[\d,]+\.?\d*", text)
+    if len(match) >= 2:
+        try:
+            old_price = float(match[0].replace("$","").replace(",",""))
+            new_price = float(match[1].replace("$","").replace(",",""))
+            return old_price, new_price
+        except:
+            return None, None
+    return None, None
 
 def check_deals():
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -50,29 +59,42 @@ def check_deals():
                 if not asin or asin in sent_items:
                     continue
 
-                text = item.get_text(" ", strip=True)
+                text = item.get_text(" ", strip=True).lower()
 
-                if "%" in text:
-                    sent_items.add(asin)
+                # filtro enviado por amazon
+                if "amazon" not in text:
+                    continue
 
-                    link = f"https://www.amazon.com.mx/dp/{asin}"
+                old_price, new_price = extract_price(text)
 
-                    msg = (
-                        "🔥 Oferta detectada\n\n"
-                        f"{text[:150]}\n\n"
-                        f"🔗 {link}"
-                    )
+                if not old_price or not new_price:
+                    continue
 
-                    send_telegram(msg)
-                    print("Oferta enviada:", asin)
+                discount = int((old_price - new_price) / old_price * 100)
+
+                if discount < 70:
+                    continue
+
+                sent_items.add(asin)
+
+                link = f"https://www.amazon.com.mx/dp/{asin}"
+
+                msg = (
+                    f"🔥 {discount}% OFF\n"
+                    f"💰 ${new_price} antes ${old_price}\n\n"
+                    f"🔗 {link}"
+                )
+
+                send_telegram(msg)
+                print("Oferta enviada:", asin)
 
         except Exception as e:
             print("Error:", e)
 
 threading.Thread(target=run_server).start()
 
-print("Amazon bot iniciado")
-send_telegram("🤖 Bot activo sin duplicados...")
+print("Amazon bot PRO iniciado")
+send_telegram("🚀 Bot PRO activo: Enviado por Amazon + 70% real + cupones")
 
 while True:
     check_deals()
