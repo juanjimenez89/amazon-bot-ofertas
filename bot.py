@@ -1,15 +1,22 @@
 import time
 import requests
-from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+import random
+import re
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
 sent = set()
 
-URL = "https://www.amazon.com.mx/s?k=ofertas"
+FEEDS = [
+    "https://www.amazon.com.mx/s?k=ofertas",
+    "https://www.amazon.com.mx/s?k=cupon",
+    "https://www.amazon.com.mx/s?k=rebaja",
+    "https://www.amazon.com.mx/gp/goldbox",
+    "https://www.amazon.com.mx/deals"
+]
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -26,42 +33,55 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
+def extract_prices(text):
+    prices = re.findall(r"\$[\d,]+\.?\d*", text)
+    if len(prices) >= 2:
+        try:
+            old_price = float(prices[0].replace("$","").replace(",",""))
+            new_price = float(prices[1].replace("$","").replace(",",""))
+            return old_price, new_price
+        except:
+            return None, None
+    return None, None
+
 def check():
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-    try:
-        r = requests.get(URL, headers=headers, timeout=20)
-        soup = BeautifulSoup(r.text, "html.parser")
+    for url in FEEDS:
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            text = r.text.lower()
 
-        for item in soup.select("[data-asin]"):
-            asin = item.get("data-asin")
+            old_price, new_price = extract_prices(text)
 
-            if not asin or asin in sent:
+            if not old_price or not new_price:
                 continue
 
-            text = item.get_text(" ", strip=True).lower()
+            discount = int((old_price - new_price) / old_price * 100)
 
-            if "%" not in text and "cupón" not in text:
+            if discount < 60:
                 continue
 
-            sent.add(asin)
+            key = str(old_price) + str(new_price)
 
-            link = f"https://www.amazon.com.mx/dp/{asin}"
+            if key in sent:
+                continue
+
+            sent.add(key)
 
             send(
-                "🔥 Oferta detectada\n\n"
-                f"🔗 {link}"
+                f"🔥 {discount}% OFF\n"
+                f"💰 ${new_price} antes ${old_price}\n\n"
+                f"🔗 {url}"
             )
 
-    except:
-        pass
+        except:
+            pass
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot productos específicos activo")
+send("🚀 Bot filtrando solo ≥60% OFF")
 
 while True:
     check()
-    time.sleep(180)
+    time.sleep(random.randint(120,240))
