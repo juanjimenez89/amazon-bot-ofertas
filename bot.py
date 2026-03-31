@@ -24,10 +24,7 @@ sent = set()
 SEARCH_URL = "https://www.amazon.com.mx/s?k="
 
 SEARCHES = [
-    "a",
-    "oferta",
-    "descuento",
-    "cupon"
+    "a","b","c","d","e","oferta","descuento","cupon"
 ]
 
 USER_AGENTS = [
@@ -35,6 +32,8 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 ]
+
+session = requests.Session()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -55,24 +54,21 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def get_price_and_coupon(asin):
-    headers = {
+def headers():
+    return {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept-Language": "es-MX,es;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
         "Referer": "https://www.amazon.com.mx/",
-        "DNT": "1"
     }
 
+def get_price(asin):
     try:
         url = f"https://www.amazon.com.mx/dp/{asin}"
-        r = requests.get(url, headers=headers, timeout=20)
-
+        r = session.get(url, headers=headers(), timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
-
-        price = None
 
         selectors = [
             "#priceblock_dealprice",
@@ -84,76 +80,51 @@ def get_price_and_coupon(asin):
         for sel in selectors:
             el = soup.select_one(sel)
             if el:
-                match = re.search(r"\$[\d,]+\.?\d*", el.text)
-                if match:
-                    price = float(match.group().replace("$","").replace(",",""))
-                    break
-
-        coupon = 0
-        text = soup.get_text(" ", strip=True)
-
-        percent = re.search(r"(\d+)%", text)
-        if percent:
-            coupon = int(percent.group(1))
-
-        return price, coupon
+                m = re.search(r"\$[\d,]+\.?\d*", el.text)
+                if m:
+                    return float(m.group().replace("$","").replace(",",""))
 
     except:
-        return None, 0
+        pass
+
+    return None
 
 def check():
-    scanned = 0
-
     for search in SEARCHES:
-        headers = {
-            "User-Agent": random.choice(USER_AGENTS)
-        }
-
         try:
-            r = requests.get(SEARCH_URL + search, headers=headers, timeout=20)
-
+            r = session.get(SEARCH_URL + search, headers=headers(), timeout=20)
             asins = re.findall(r'data-asin="([A-Z0-9]{10})"', r.text)
 
-            for asin in asins[:12]:
-                price, coupon = get_price_and_coupon(asin)
-
+            for asin in asins[:10]:
+                price = get_price(asin)
                 if not price:
                     continue
-
-                scanned += 1
-
-                discount = 0
 
                 if asin in prices_db:
                     old = prices_db[asin]
                     discount = int((old - price) / old * 100)
 
-                total_discount = discount + coupon
-
-                if total_discount >= 55 and asin not in sent:
-                    sent.add(asin)
-
-                    send(
-                        f"🔥 {total_discount}% TOTAL\n"
-                        f"💰 ${price}\n"
-                        f"🎟️ Cupón {coupon}%\n\n"
-                        f"https://www.amazon.com.mx/dp/{asin}"
-                    )
+                    if discount >= 55 and asin not in sent:
+                        sent.add(asin)
+                        send(
+                            f"🔥 {discount}% OFF\n"
+                            f"💰 ${price}\n"
+                            f"https://www.amazon.com.mx/dp/{asin}"
+                        )
 
                 prices_db[asin] = price
 
-                time.sleep(random.uniform(2.5,4.5))
+                time.sleep(random.uniform(3,5))
 
         except:
             pass
 
     save_db()
-
-    send(f"📊 Productos comparados {len(prices_db)}")
+    send(f"📊 Comparados {len(prices_db)}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRECISIÓN FINAL ANTI-BLOQUEO activo")
+send("🚀 BOT FINAL REAL activo")
 
 while True:
     check()
