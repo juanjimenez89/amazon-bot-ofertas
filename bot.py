@@ -21,16 +21,12 @@ else:
 
 sent = set()
 
-PAGES = range(1,6)
-
-SEARCHES = [
-    "a",
-    "electronica",
-    "hogar",
-    "herramientas",
-    "juguetes",
-    "computadora",
-    "oficina"
+DEAL_URLS = [
+    "https://www.amazon.com.mx/deals",
+    "https://www.amazon.com.mx/gp/goldbox",
+    "https://www.amazon.com.mx/gp/goldbox/ref=gbps_ftr_s-5_",
+    "https://www.amazon.com.mx/s?k=descuento",
+    "https://www.amazon.com.mx/s?k=oferta"
 ]
 
 USER_AGENTS = [
@@ -59,104 +55,90 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def extract_prices_from_item(item):
-    prices = []
+def extract_prices(text):
+    prices = re.findall(r"\$[\d,]+\.?\d*", text)
+    nums = []
 
-    for span in item.select("span.a-price"):
-        whole = span.select_one("span.a-price-whole")
-        fraction = span.select_one("span.a-price-fraction")
+    for p in prices:
+        try:
+            nums.append(float(p.replace("$","").replace(",","")))
+        except:
+            pass
 
-        if whole:
-            price = whole.text.replace(",", "")
-            if fraction:
-                price += "." + fraction.text
+    if len(nums) >= 2:
+        return max(nums), min(nums)
 
-            try:
-                prices.append(float(price))
-            except:
-                pass
-
-    if len(prices) >= 2:
-        old_price = max(prices)
-        new_price = min(prices)
-
-        if old_price > new_price:
-            return old_price, new_price
-
-    return None, None
+    return None
 
 def check():
     scanned = 0
 
-    for search in SEARCHES:
-        for page in PAGES:
+    for url in DEAL_URLS:
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept-Language": "es-MX,es;q=0.9"
+        }
 
-            headers = {
-                "User-Agent": random.choice(USER_AGENTS),
-                "Accept-Language": "es-MX,es;q=0.9"
-            }
+        try:
+            r = requests.get(url, headers=headers, timeout=20)
+            soup = BeautifulSoup(r.text, "html.parser")
 
-            url = f"https://www.amazon.com.mx/s?k={search}&page={page}"
+            items = soup.select("[data-asin]")
 
-            try:
-                r = requests.get(url, headers=headers, timeout=15)
-                soup = BeautifulSoup(r.text, "html.parser")
+            for item in items:
+                asin = item.get("data-asin")
+                if not asin:
+                    continue
 
-                items = soup.select("div.s-result-item")
+                text = item.get_text(" ", strip=True)
 
-                for item in items:
-                    asin = item.get("data-asin")
-                    if not asin:
-                        continue
+                price = extract_prices(text)
+                scanned += 1
 
-                    price = extract_prices_from_item(item)
+                if price:
+                    old_price, new_price = price
+                    discount = int((old_price - new_price) / old_price * 100)
 
-                    scanned += 1
+                    if discount >= 55 and asin not in sent:
+                        sent.add(asin)
 
-                    if price:
-                        old_price, new_price = price
-                        discount = int((old_price - new_price) / old_price * 100)
+                        send(
+                            f"🔥 {discount}% OFF\n"
+                            f"💰 ${new_price} antes ${old_price}\n\n"
+                            f"🔗 https://www.amazon.com.mx/dp/{asin}"
+                        )
 
-                        if discount >= 55 and asin not in sent:
+                if asin in prices_db and price:
+                    old = prices_db[asin]
+                    new = price[1]
+
+                    if old > 0:
+                        drop = int((old - new) / old * 100)
+
+                        if drop >= 55 and asin not in sent:
                             sent.add(asin)
 
                             send(
-                                f"🔥 {discount}% OFF\n"
-                                f"💰 ${new_price} antes ${old_price}\n\n"
+                                f"⚡ Bajada {drop}%\n"
+                                f"💰 ${new} antes ${old}\n\n"
                                 f"🔗 https://www.amazon.com.mx/dp/{asin}"
                             )
 
-                    if asin in prices_db and price:
-                        old = prices_db[asin]
-                        new = price[1]
+                if price:
+                    prices_db[asin] = price[1]
 
-                        if old > 0:
-                            drop = int((old - new) / old * 100)
+            time.sleep(random.uniform(2,4))
 
-                            if drop >= 55 and asin not in sent:
-                                sent.add(asin)
-
-                                send(
-                                    f"⚡ Bajada {drop}%\n"
-                                    f"💰 ${new} antes ${old}\n\n"
-                                    f"🔗 https://www.amazon.com.mx/dp/{asin}"
-                                )
-
-                    if price:
-                        prices_db[asin] = price[1]
-
-                time.sleep(random.uniform(1.5,3))
-
-            except:
-                pass
+        except:
+            pass
 
     save_db()
 
-    send(f"📊 Monitoreando {len(prices_db)} productos | Escaneados {scanned}")
+    send(f"📊 Ofertas monitoreadas {len(prices_db)} | Escaneadas {scanned}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRO estable anti-bloqueo activo")
+send("🚀 Bot modo OFERTAS Amazon activo")
 
 while True:
     check()
