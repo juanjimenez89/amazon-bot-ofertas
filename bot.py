@@ -1,6 +1,17 @@
 import time
+import requests
+from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+
+MIN_DISCOUNT = 70
+MIN_PRICE = 20
+MAX_PRICE = 10000
+
+URLS = [
+    "https://www.amazon.com.mx/gp/goldbox",
+    "https://www.amazon.com.mx/deals",
+]
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -13,9 +24,30 @@ def run_server():
     server = HTTPServer(('', port), Handler)
     server.serve_forever()
 
+def check_deals():
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    for url in URLS:
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            for item in soup.select("div[data-asin]"):
+                text = item.get_text(" ", strip=True)
+
+                # filtro simple por porcentaje
+                if "%" in text:
+                    print("Posible oferta:", text[:120])
+
+        except Exception as e:
+            print("Error:", e)
+
 threading.Thread(target=run_server).start()
 
 print("Amazon bot iniciado")
 
 while True:
-    time.sleep(60)
+    check_deals()
+    time.sleep(300)
