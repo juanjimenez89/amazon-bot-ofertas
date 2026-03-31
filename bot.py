@@ -3,16 +3,17 @@ import requests
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
+import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
 sent = set()
 
-# Fuentes externas confiables
 SOURCES = [
-    "https://api.allorigins.win/raw?url=https://www.ofertitas.com.mx",
-    "https://api.allorigins.win/raw?url=https://www.promodescuentos.com"
+    "https://www.promodescuentos.com",
+    "https://www.ofertitas.com.mx",
+    "https://www.promodescuentos.com/search?q=amazon"
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -35,47 +36,67 @@ def send(msg):
         pass
 
 def extract_discount(text):
-    m = re.search(r'(\d{2})\s?%', text)
+    m = re.search(r'(\d{1,3})\s?%', text)
     if m:
         return int(m.group(1))
     return 0
 
+def extract_money(text):
+    m = re.search(r'\$ ?([\d,]+)', text)
+    if m:
+        return int(m.group(1).replace(",",""))
+    return 0
+
 def check():
-    total = 0
+    found = 0
 
     for url in SOURCES:
         try:
             r = requests.get(url, timeout=15)
-            html = r.text
+            html = r.text.lower()
 
-            # buscar links Amazon
             links = re.findall(r'https://www\.amazon\.com\.mx[^\s"]+', html)
 
             for link in links:
                 if link in sent:
                     continue
 
-                # buscar descuento cercano
-                snippet = html[max(0, html.find(link)-100):html.find(link)+100]
-                discount = extract_discount(snippet)
+                pos = html.find(link)
+                snippet = html[max(0,pos-200):pos+200]
 
-                if discount >= 60:
+                discount = extract_discount(snippet)
+                coupon = extract_money(snippet)
+
+                send_flag = False
+
+                if discount >= 55:
+                    send_flag = True
+
+                if coupon >= 100:
+                    send_flag = True
+
+                if coupon > 0 and discount > 0 and (discount + 25) >= 55:
+                    send_flag = True
+
+                if send_flag:
                     sent.add(link)
-                    total += 1
+                    found += 1
 
                     send(
-                        f"🔥 {discount}% OFF detectado\n"
-                        f"🛒 {link}"
+                        f"🔥 Oferta detectada\n"
+                        f"Descuento: {discount}%\n"
+                        f"Cupón: ${coupon}\n"
+                        f"{link}"
                     )
 
         except:
             pass
 
-    send(f"📊 Revisadas | nuevas {total}")
+    send(f"📊 Revisadas | nuevas {found}")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot OFERTAS AMAZON activo")
+send("🚀 BOT FINAL OFERTAS activo")
 
 while True:
     try:
