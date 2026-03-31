@@ -11,12 +11,9 @@ CHAT_ID = "-1003785044780"
 
 sent = set()
 
-URLS = [
-    "https://www.amazon.com.mx/s?k=ofertas",
-    "https://www.amazon.com.mx/s?k=cupon",
-    "https://www.amazon.com.mx/gp/goldbox",
-    "https://www.amazon.com.mx/deals"
-]
+PAGES = [1,2,3,4,5]
+
+BASE_URL = "https://www.amazon.com.mx/s?k=a&page="
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,10 +30,18 @@ def send(msg):
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
+def extract_coupon(text):
+    match = re.search(r"(\d+)%", text)
+    if match:
+        return int(match.group(1))
+    return 0
+
 def check():
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    for url in URLS:
+    for page in PAGES:
+        url = BASE_URL + str(page)
+
         try:
             r = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
@@ -57,9 +62,12 @@ def check():
                 except:
                     continue
 
-                discount = int((old_price - new_price) / old_price * 100)
+                coupon = extract_coupon(text)
 
-                if discount < 60:
+                discount = int((old_price - new_price) / old_price * 100)
+                total_discount = discount + coupon
+
+                if total_discount < 60:
                     continue
 
                 key = str(old_price) + str(new_price)
@@ -70,8 +78,9 @@ def check():
                 sent.add(key)
 
                 send(
-                    f"🔥 {discount}% OFF\n"
-                    f"💰 ${new_price} antes ${old_price}\n\n"
+                    f"🔥 {total_discount}% OFF\n"
+                    f"💰 ${new_price} antes ${old_price}\n"
+                    f"🎟️ Cupón: {coupon}%\n\n"
                     f"🔗 https://www.amazon.com.mx"
                 )
 
@@ -80,8 +89,8 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot 60% por producto activo")
+send("🚀 Bot comparando precios en todo Amazon")
 
 while True:
     check()
-    time.sleep(random.randint(120,240))
+    time.sleep(random.randint(90,180))
