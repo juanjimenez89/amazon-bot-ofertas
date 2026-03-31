@@ -109,8 +109,8 @@ def check():
 
     with open(DB_FILE,"w") as f:
         json.dump(prices_db,f)
-
-    send(f"📊 Comparados {compared}")
+        
+send(f"📊 Comparados {compared} | Bot vivo")
 
 threading.Thread(target=run_server).start()
 
