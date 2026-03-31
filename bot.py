@@ -6,6 +6,7 @@ import threading
 import re
 import json
 import os
+import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
@@ -20,7 +21,7 @@ else:
 
 sent = set()
 
-PAGES = range(1,11)
+PAGES = range(1,6)
 
 SEARCHES = [
     "a",
@@ -29,10 +30,14 @@ SEARCHES = [
     "herramientas",
     "juguetes",
     "computadora",
-    "oficina",
-    "cocina",
-    "gaming",
-    "celular"
+    "oficina"
+]
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    "Mozilla/5.0 (X11; Linux x86_64)",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"
 ]
 
 class Handler(BaseHTTPRequestHandler):
@@ -80,22 +85,17 @@ def extract_prices_from_item(item):
 
     return None, None
 
-def extract_coupon(text):
-    match = re.search(r"(\d+)%", text)
-    if match:
-        return int(match.group(1))
-    return 0
-
 def check():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept-Language": "es-MX,es;q=0.9"
-    }
-
     scanned = 0
 
     for search in SEARCHES:
         for page in PAGES:
+
+            headers = {
+                "User-Agent": random.choice(USER_AGENTS),
+                "Accept-Language": "es-MX,es;q=0.9"
+            }
+
             url = f"https://www.amazon.com.mx/s?k={search}&page={page}"
 
             try:
@@ -109,10 +109,7 @@ def check():
                     if not asin:
                         continue
 
-                    text = item.get_text(" ", strip=True)
-
                     price = extract_prices_from_item(item)
-                    coupon = extract_coupon(text)
 
                     scanned += 1
 
@@ -145,16 +142,10 @@ def check():
                                     f"🔗 https://www.amazon.com.mx/dp/{asin}"
                                 )
 
-                    if coupon >= 20 and asin not in sent:
-                        sent.add(asin)
-
-                        send(
-                            f"🎟️ Cupón {coupon}% detectado\n"
-                            f"🔗 https://www.amazon.com.mx/dp/{asin}"
-                        )
-
                     if price:
                         prices_db[asin] = price[1]
+
+                time.sleep(random.uniform(1.5,3))
 
             except:
                 pass
@@ -165,7 +156,7 @@ def check():
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot PRO precios corregidos activo")
+send("🚀 Bot PRO estable anti-bloqueo activo")
 
 while True:
     check()
