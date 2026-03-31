@@ -7,9 +7,7 @@ import threading
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
-MIN_DISCOUNT = 70
-MIN_PRICE = 20
-MAX_PRICE = 10000
+sent_items = set()
 
 URLS = [
     "https://www.amazon.com.mx/gp/goldbox",
@@ -39,9 +37,7 @@ def send_telegram(msg):
         pass
 
 def check_deals():
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     for url in URLS:
         try:
@@ -49,11 +45,26 @@ def check_deals():
             soup = BeautifulSoup(r.text, "html.parser")
 
             for item in soup.select("div[data-asin]"):
+                asin = item.get("data-asin")
+
+                if not asin or asin in sent_items:
+                    continue
+
                 text = item.get_text(" ", strip=True)
 
                 if "%" in text:
-                    send_telegram("🔥 Oferta detectada\n" + text[:200])
-                    print("Oferta enviada")
+                    sent_items.add(asin)
+
+                    link = f"https://www.amazon.com.mx/dp/{asin}"
+
+                    msg = (
+                        "🔥 Oferta detectada\n\n"
+                        f"{text[:150]}\n\n"
+                        f"🔗 {link}"
+                    )
+
+                    send_telegram(msg)
+                    print("Oferta enviada:", asin)
 
         except Exception as e:
             print("Error:", e)
@@ -61,7 +72,7 @@ def check_deals():
 threading.Thread(target=run_server).start()
 
 print("Amazon bot iniciado")
-send_telegram("🤖 Bot activo y monitoreando ofertas...")
+send_telegram("🤖 Bot activo sin duplicados...")
 
 while True:
     check_deals()
