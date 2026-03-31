@@ -1,6 +1,5 @@
 import time
 import requests
-from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import random
@@ -8,75 +7,65 @@ import random
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
-sent_items = set()
+sent = set()
 
-URLS = [
-    "https://www.amazon.com.mx/s?k=ofertas",
-    "https://www.amazon.com.mx/s?k=descuentos",
-    "https://www.amazon.com.mx/s?k=cupon",
+FEEDS = [
     "https://www.amazon.com.mx/gp/goldbox",
-    "https://www.amazon.com.mx/deals"
-]
-
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X)",
-    "Mozilla/5.0 (X11; Linux x86_64)",
+    "https://www.amazon.com.mx/deals",
+    "https://www.amazon.com.mx/s?k=ofertas",
+    "https://www.amazon.com.mx/s?k=cupon",
+    "https://www.amazon.com.mx/s?k=rebajas",
+    "https://www.amazon.com.mx/s?k=liquidacion",
 ]
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot activo")
+        self.wfile.write(b"OK")
 
 def run_server():
-    HTTPServer(('', 10000), Handler).serve_forever()
+    HTTPServer(('',10000), Handler).serve_forever()
 
-def send_telegram(msg):
+def send(msg):
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
         data={"chat_id": CHAT_ID, "text": msg}
     )
 
-def check_deals():
-    headers = {"User-Agent": random.choice(USER_AGENTS)}
+def check():
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-    for url in URLS:
+    for url in FEEDS:
         try:
-            r = requests.get(url, headers=headers, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
+            r = requests.get(url, headers=headers, timeout=15)
 
-            for item in soup.select("div.s-result-item"):
-                asin = item.get("data-asin")
+            if "%" in r.text.lower() or "cupón" in r.text.lower():
+                key = url + str(random.randint(1,1000))
 
-                if not asin or asin in sent_items:
+                if key in sent:
                     continue
 
-                text = item.get_text(" ", strip=True)
+                sent.add(key)
 
-                if "%" not in text and "cupón" not in text.lower():
-                    continue
-
-                sent_items.add(asin)
-
-                link = f"https://www.amazon.com.mx/dp/{asin}"
-
-                send_telegram(
-                    "🔥 Oferta detectada\n\n"
-                    f"{text[:120]}...\n\n"
-                    f"🔗 {link}"
+                send(
+                    "🔥 Posible oferta detectada\n\n"
+                    "Incluye:\n"
+                    "• cupón\n"
+                    "• oferta relámpago\n"
+                    "• posible error de precio\n\n"
+                    f"🔗 {url}"
                 )
 
-                print("Enviado:", asin)
-
-        except Exception as e:
-            print("Error:", e)
+        except:
+            pass
 
 threading.Thread(target=run_server).start()
 
-send_telegram("🚀 Bot estable anti-bloqueo activo")
+send("🚀 Bot Amazon México PRO activo")
 
 while True:
-    check_deals()
+    check()
     time.sleep(random.randint(120,240))
