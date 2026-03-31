@@ -1,32 +1,21 @@
 import time
 import requests
-from bs4 import BeautifulSoup
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import re
-import json
-import os
 import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
-DB_FILE = "prices.json"
-
-if os.path.exists(DB_FILE):
-    with open(DB_FILE,"r") as f:
-        prices_db = json.load(f)
-else:
-    prices_db = {}
-
 sent = set()
 
-DEAL_URLS = [
-    "https://www.amazon.com.mx/deals",
-    "https://www.amazon.com.mx/gp/goldbox",
-    "https://www.amazon.com.mx/gp/goldbox/ref=gbps_ftr_s-5_",
-    "https://www.amazon.com.mx/s?k=descuento",
-    "https://www.amazon.com.mx/s?k=oferta"
+URLS = [
+    "https://www.amazon.com.mx/s?k=ofertas",
+    "https://www.amazon.com.mx/s?k=descuentos",
+    "https://www.amazon.com.mx/s?k=cupon",
+    "https://www.amazon.com.mx/s?k=rebaja",
+    "https://www.amazon.com.mx/gp/goldbox"
 ]
 
 USER_AGENTS = [
@@ -45,10 +34,6 @@ class Handler(BaseHTTPRequestHandler):
 def run_server():
     HTTPServer(('',10000), Handler).serve_forever()
 
-def save_db():
-    with open(DB_FILE,"w") as f:
-        json.dump(prices_db,f)
-
 def send(msg):
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -57,23 +42,23 @@ def send(msg):
 
 def extract_prices(text):
     prices = re.findall(r"\$[\d,]+\.?\d*", text)
-    nums = []
+    values = []
 
     for p in prices:
         try:
-            nums.append(float(p.replace("$","").replace(",","")))
+            values.append(float(p.replace("$","").replace(",","")))
         except:
             pass
 
-    if len(nums) >= 2:
-        return max(nums), min(nums)
+    if len(values) >= 2:
+        return max(values), min(values)
 
     return None
 
 def check():
-    scanned = 0
+    total = 0
 
-    for url in DEAL_URLS:
+    for url in URLS:
         headers = {
             "User-Agent": random.choice(USER_AGENTS),
             "Accept-Language": "es-MX,es;q=0.9"
@@ -81,19 +66,20 @@ def check():
 
         try:
             r = requests.get(url, headers=headers, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
+            text = r.text
 
-            items = soup.select("[data-asin]")
+            blocks = text.split("data-asin")
 
-            for item in items:
-                asin = item.get("data-asin")
-                if not asin:
+            for block in blocks:
+                asin_match = re.search(r'([A-Z0-9]{10})', block)
+                if not asin_match:
                     continue
 
-                text = item.get_text(" ", strip=True)
+                asin = asin_match.group(1)
 
-                price = extract_prices(text)
-                scanned += 1
+                price = extract_prices(block)
+
+                total += 1
 
                 if price:
                     old_price, new_price = price
@@ -105,40 +91,19 @@ def check():
                         send(
                             f"🔥 {discount}% OFF\n"
                             f"💰 ${new_price} antes ${old_price}\n\n"
-                            f"🔗 https://www.amazon.com.mx/dp/{asin}"
+                            f"https://www.amazon.com.mx/dp/{asin}"
                         )
-
-                if asin in prices_db and price:
-                    old = prices_db[asin]
-                    new = price[1]
-
-                    if old > 0:
-                        drop = int((old - new) / old * 100)
-
-                        if drop >= 55 and asin not in sent:
-                            sent.add(asin)
-
-                            send(
-                                f"⚡ Bajada {drop}%\n"
-                                f"💰 ${new} antes ${old}\n\n"
-                                f"🔗 https://www.amazon.com.mx/dp/{asin}"
-                            )
-
-                if price:
-                    prices_db[asin] = price[1]
 
             time.sleep(random.uniform(2,4))
 
         except:
             pass
 
-    save_db()
-
-    send(f"📊 Ofertas monitoreadas {len(prices_db)} | Escaneadas {scanned}")
+    send(f"📊 Revisados {total} productos")
 
 threading.Thread(target=run_server).start()
 
-send("🚀 Bot modo OFERTAS Amazon activo")
+send("🚀 Bot estable final activo")
 
 while True:
     check()
