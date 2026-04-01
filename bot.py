@@ -3,13 +3,15 @@ import requests
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
-import random
 
 TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
 CHAT_ID = "-1003785044780"
 
 sent = set()
 prices = {}
+
+# tu URL de render (se llena automáticamente)
+RENDER_URL = None
 
 MONITOR = [
     "https://www.amazon.com.mx/gp/goldbox",
@@ -24,12 +26,25 @@ EXTERNAL = [
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        global RENDER_URL
+        if not RENDER_URL:
+            host = self.headers.get('Host')
+            RENDER_URL = f"https://{host}"
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
 
 def run_server():
     HTTPServer(('',10000), Handler).serve_forever()
+
+def keep_alive():
+    while True:
+        try:
+            if RENDER_URL:
+                requests.get(RENDER_URL, timeout=10)
+        except:
+            pass
+        time.sleep(240)
 
 def send(msg):
     try:
@@ -71,7 +86,7 @@ def monitor_amazon():
                         if discount >= 55 and asin not in sent:
                             sent.add(asin)
                             send(
-                                f"💥 Bajada detectada {discount}%\n"
+                                f"💥 Bajada {discount}%\n"
                                 f"Antes: ${old}\n"
                                 f"Ahora: ${price}\n"
                                 f"{product_url}"
@@ -81,7 +96,6 @@ def monitor_amazon():
 
                 except:
                     pass
-
         except:
             pass
 
@@ -106,12 +120,11 @@ def check_external():
                 if discount >= 55 or coupon >= 100:
                     sent.add(link)
                     send(
-                        f"🔥 Oferta detectada\n"
+                        f"🔥 Oferta\n"
                         f"Descuento: {discount}%\n"
                         f"Cupón: ${coupon}\n"
                         f"{link}"
                     )
-
         except:
             pass
 
@@ -120,12 +133,13 @@ def loop():
         try:
             monitor_amazon()
             check_external()
-            send("📊 Bot monitoreando...")
+            send("📊 Monitoreando...")
         except:
-            send("⚠️ error reinicio")
+            send("⚠️ Reinicio automático")
         time.sleep(300)
 
 threading.Thread(target=run_server).start()
+threading.Thread(target=keep_alive).start()
 threading.Thread(target=loop).start()
 
-send("🚀 BOT HÍBRIDO ACTIVO")
+send("🚀 BOT FINAL 24/7 ACTIVO")
