@@ -74,8 +74,26 @@ def loop():
         try: monitor()
         except: pass
         time.sleep(900) # Revisa cada 15 minutos
+def run_server():
+    try:
+        server = HTTPServer(('', 10000), Handler)
+        print("✅ Servidor web iniciado en puerto 10000")
+        server.serve_forever()
+    except Exception as e:
+        print(f"Error en servidor: {e}")
 
-# Servidor para que Render no lo apague
-threading.Thread(target=lambda: HTTPServer(('', 10000), Handler).serve_forever(), daemon=True).start()
-send_telegram("🚀 Bot de Errores Amazon Online")
-loop()
+if __name__ == "__main__":
+    print("🎬 Iniciando bot...")
+    
+    # 1. Intentamos enviar el mensaje a Telegram primero
+    send_telegram("🚀 ¡Bot conectado! Buscando errores de precio...")
+    
+    # 2. Arrancamos el servidor en segundo plano
+    t = threading.Thread(target=run_server)
+    t.daemon = True
+    t.start()
+    
+    # 3. Arrancamos el buscador de ofertas (el loop infinito)
+    print("🕵️ Monitor de Amazon arrancado...")
+    loop()
+
