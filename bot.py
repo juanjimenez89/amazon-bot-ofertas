@@ -12,102 +12,101 @@ CHAT_ID = "-1003785044780" # Recuerda el "-" si es grupo (ej: -100123456)
 SCRAPER_API_KEY = "0f356e3516784877bcf481cc9b6fdac0" 
 
 # ==========================================
-# 2. LÓGICA DE MONITOREO (VERSIÓN COMPATIBLE)
+# 2. GENERADOR DE LISTADOS MASIVOS (WEB)
 # ==========================================
-sent = set()
-prices = {}
-
-CATEGORIAS = [
-    "https://www.amazon.com.mx/gp/bestsellers/electronics",
-    "https://www.amazon.com.mx/gp/bestsellers/toys",
-    "https://www.amazon.com.mx/gp/bestsellers/beauty",
-    "https://www.amazon.com.mx/gp/bestsellers/home"
-]
+productos_encontrados = [] # Aquí guardaremos la lista para mostrarla
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(b"BOT TRABAJANDO")
-
-def send_telegram(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-    except Exception as e:
-        print(f"❌ Error Telegram: {e}", flush=True)
+        
+        # Creamos una página web simple para que veas la lista
+        html_out = f"""
+        <html>
+        <head>
+            <title>Panel de Caza-Ofertas</title>
+            <style>
+                body {{ font-family: sans-serif; background: #f4f4f9; padding: 20px; }}
+                table {{ width: 100%; border-collapse: collapse; background: white; }}
+                th, td {{ padding: 12px; border: 1px solid #ddd; text-align: left; }}
+                th {{ background: #232f3e; color: white; }}
+                tr:nth-child(even) {{ background: #f2f2f2; }}
+                .precio {{ font-weight: bold; color: #b12704; }}
+                .descuento {{ background: #ffd814; padding: 5px; border-radius: 4px; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <h1>📦 Listado de Productos Detectados</h1>
+            <p>Se actualiza automáticamente cada 15 minutos.</p>
+            <table>
+                <tr>
+                    <th>Producto (ASIN)</th>
+                    <th>Precio Detectado</th>
+                    <th>Link Directo</th>
+                </tr>
+        """
+        for p in productos_encontrados:
+            html_out += f"""
+                <tr>
+                    <td>{p['asin']}</td>
+                    <td class="precio">${p['precio']}</td>
+                    <td><a href="{p['url']}" target="_blank">Ver en Amazon</a></td>
+                </tr>
+            """
+        html_out += "</table></body></html>"
+        self.wfile.write(html_out.encode('utf-8'))
 
 def get_html(url_objetivo):
     try:
-        # Quitamos browser=true para evitar el error 422 si la cuenta es Free
         api_url = f"https://api.scrapingant.com/v2/general?url={url_objetivo}&x-api-key={SCRAPER_API_KEY}"
-        r = requests.get(api_url, timeout=30)
-        if r.status_code == 200:
-            return r.text
-        print(f"⚠️ Error ScrapingAnt {r.status_code} en URL: {url_objetivo}", flush=True)
-    except Exception as e:
-        print(f"❌ Error conexión: {e}", flush=True)
-    return None
-
-def extract_price(html):
-    if not html: return 0
-    try:
-        # Buscador de precio simplificado
-        m = re.search(r'priceAmount":(\d+\.?\d*)', html)
-        if m: return float(m.group(1))
-        
-        m = re.search(r'\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', html)
-        if m: return float(m.group(1).replace(",", ""))
-    except: pass
-    return 0
+        r = requests.get(api_url, timeout=40)
+        return r.text if r.status_code == 200 else None
+    except: return None
 
 def monitor():
-    print(f"\n--- 🔎 NUEVA RONDA ---", flush=True)
-    for url in CATEGORIAS:
-        nombre = url.split('/')[-1]
-        print(f"📂 Revisando: {nombre}...", flush=True)
-        
+    global productos_encontrados
+    print("🔎 Iniciando escaneo masivo...", flush=True)
+    nuevos_productos = []
+    
+    # Buscamos en secciones de mucho movimiento
+    urls = [
+        "https://www.amazon.com.mx/gp/movers-and-shakers/electronics",
+        "https://www.amazon.com.mx/gp/movers-and-shakers/toys",
+        "https://www.amazon.com.mx/gp/goldbox"
+    ]
+
+    for url in urls:
         html = get_html(url)
         if not html: continue
-
-        # Buscamos códigos ASIN
-        asins = list(set(re.findall(r'B[A-Z0-9]{9}', html)))
-        print(f"📦 Productos encontrados: {len(asins)}", flush=True)
+        asins = list(set(re.findall(r'B0[A-Z0-9]{8}', html)))
         
-        for asin in asins[:3]: # Revisamos 3 de cada una
-            prod_url = f"https://www.amazon.com.mx/dp/{asin}"
-            p_html = get_html(prod_url)
-            price = extract_price(p_html)
-
-            if price > 0:
-                print(f"💰 {asin}: ${price}", flush=True)
-                if asin in prices:
-                    old = prices[asin]
-                    if price <= (old * 0.7): # 30% de descuento
-                        if asin not in sent:
-                            sent.add(asin)
-                            send_telegram(f"🚨 OFERTA: {asin}\nAntes: ${old}\nAhora: ${price}\n{prod_url}")
-                prices[asin] = price
-            time.sleep(2)
-    print("--- ✅ Fin de ronda. Esperando 15 min ---", flush=True)
+        for asin in asins[:10]: # Sacamos 10 de cada categoría
+            p_url = f"https://www.amazon.com.mx/dp/{asin}"
+            p_html = get_html(p_url)
+            if p_html:
+                # Extraer precio
+                m = re.search(r'\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', p_html)
+                precio = m.group(1) if m else "No visible"
+                nuevos_productos.append({'asin': asin, 'precio': precio, 'url': p_url})
+                print(f"✅ Registrado: {asin} - ${precio}", flush=True)
+            time.sleep(1)
+            
+    productos_encontrados = nuevos_productos
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
+                  data={"chat_id": CHAT_ID, "text": "📊 ¡Lista actualizada! Entra a tu link de Render para verla."})
 
 def run_server():
     server = HTTPServer(('', 10000), Handler)
-    print("✅ Puerto 10000 listo", flush=True)
     server.serve_forever()
 
-# ==========================================
-# 3. ARRANQUE
-# ==========================================
 if __name__ == "__main__":
-    print("🎬 INICIANDO...", flush=True)
     t = threading.Thread(target=run_server)
     t.daemon = True
     t.start()
-    
     while True:
-        try:
-            monitor()
-        except Exception as e:
-            print(f"❌ Error: {e}", flush=True)
+        monitor()
         time.sleep(900)
+
+
