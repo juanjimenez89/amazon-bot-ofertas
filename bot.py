@@ -4,11 +4,16 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import re
 
-# --- CONFIGURACIÓN ---
-TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQS"
-CHAT_ID = "-1003785044780"
+# ==========================================
+# 1. TUS DATOS (CAMBIA ESTO)
+# ==========================================
+TELEGRAM_TOKEN = "8730063920:AAGT5H5firb-8JC-NpypA1GFKa-N2tTbQSA"
+CHAT_ID = "-1003785044780" # Recuerda el "-" si es grupo (ej: -100123456)
 SCRAPER_API_KEY = "0f356e3516784877bcf481cc9b6fdac0" 
 
+# ==========================================
+# 2. CONFIGURACIÓN DEL BOT
+# ==========================================
 sent = set()
 prices = {}
 
@@ -22,78 +27,92 @@ def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-    except: pass
+    except Exception as e:
+        print(f"Error Telegram: {e}", flush=True)
 
-def get_html(url):
+def get_html(url_objetivo):
     try:
-        # Usamos ScrapingAnt para saltar el bloqueo
-        api_url = f"https://api.scrapingant.com/v2/general?url={url}&x-api-key={SCRAPER_API_KEY}&browser=false"
-        r = requests.get(api_url, timeout=25)
-        return r.text if r.status_code == 200 else None
-    except: return None
+        # Usamos ScrapingAnt para saltar el bloqueo de Amazon
+        api_url = f"https://api.scrapingant.com/v2/general?url={url_objetivo}&x-api-key={SCRAPER_API_KEY}&browser=false"
+        r = requests.get(api_url, timeout=30)
+        if r.status_code == 200:
+            return r.text
+        print(f"Error ScrapingAnt: {r.status_code}", flush=True)
+    except Exception as e:
+        print(f"Error conexión: {e}", flush=True)
+    return None
 
 def extract_price(html):
     if not html: return 0
-    # Buscamos el precio en el formato de Amazon MX
-    m = re.search(r'priceAmount":(\d+\.?\d*)', html)
-    if not m:
-        # Intento secundario por si cambian el JSON
+    try:
+        # Buscamos el precio en el código de Amazon MX
+        m = re.search(r'priceAmount":(\d+\.?\d*)', html)
+        if m: return float(m.group(1))
+        # Intento secundario con símbolo de pesos
         m = re.search(r'\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', html)
-    return float(m.group(1).replace(",", "")) if m else 0
+        if m: return float(m.group(1).replace(",", ""))
+    except: pass
+    return 0
 
 def monitor():
-    # Sección de Ofertas del Día
     url_ofertas = "https://www.amazon.com.mx/gp/goldbox"
+    print("--- Revisando ofertas en Amazon MX ---", flush=True)
+    
     html = get_html(url_ofertas)
     if not html: return
 
-    # Extraer ASINs (identificadores de producto)
+    # Buscamos códigos de productos (ASINs)
     asins = list(set(re.findall(r'data-asin="([A-Z0-9]{10})"', html)))
     
-    # Revisamos los primeros 12 para no agotar créditos rápido
-    for asin in asins[:12]:
+    # Revisamos los primeros 10 para ahorrar créditos de la API
+    for asin in asins[:10]:
         prod_url = f"https://www.amazon.com.mx/dp/{asin}"
         p_html = get_html(prod_url)
         price = extract_price(p_html)
 
         if price > 10:
+            print(f"Producto {asin}: ${price}", flush=True)
+            
             if asin in prices:
                 old = prices[asin]
-                # Si el precio baja más del 50%, es un posible error
-                if price < (old * 0.5):
+                # Si baja más del 40%, avisamos
+                if price <= (old * 0.6):
                     if asin not in sent:
                         sent.add(asin)
-                        send_telegram(f"🚨 ¡ERROR DE PRECIO! 🚨\nAntes: ${old}\nAhora: ${price}\n{prod_url}")
+                        msg = f"🚨 ¡OFERTA DETECTADA! 🚨\nAntes: ${old}\nAhora: ${price}\nLink: {prod_url}"
+                        send_telegram(msg)
             
             prices[asin] = price
-            print(f"Producto {asin}: ${price}")
         time.sleep(2)
 
 def loop():
     while True:
-        try: monitor()
-        except: pass
-        time.sleep(900) # Revisa cada 15 minutos
-def run_server():
-    try:
-        server = HTTPServer(('', 10000), Handler)
-        print("✅ Servidor web iniciado en puerto 10000")
-        server.serve_forever()
-    except Exception as e:
-        print(f"Error en servidor: {e}")
+        try:
+            monitor()
+        except Exception as e:
+            print(f"Error en loop: {e}", flush=True)
+        # Espera 15 minutos entre revisiones
+        time.sleep(900)
 
+def run_server():
+    server = HTTPServer(('', 10000), Handler)
+    print("✅ Servidor web listo (Puerto 10000)", flush=True)
+    server.serve_forever()
+
+# ==========================================
+# 3. ARRANQUE DEL BOT
+# ==========================================
 if __name__ == "__main__":
-    print("🎬 Iniciando bot...")
+    print("🎬 Iniciando bot...", flush=True)
     
-    # 1. Intentamos enviar el mensaje a Telegram primero
-    send_telegram("🚀 ¡Bot conectado! Buscando errores de precio...")
+    # Prueba de Telegram
+    send_telegram("🚀 Bot de Amazon Conectado. Buscando errores...")
     
-    # 2. Arrancamos el servidor en segundo plano
+    # Hilo del servidor para Render
     t = threading.Thread(target=run_server)
     t.daemon = True
     t.start()
     
-    # 3. Arrancamos el buscador de ofertas (el loop infinito)
-    print("🕵️ Monitor de Amazon arrancado...")
+    # Iniciamos el monitor
+    print("🕵️ Monitor arrancado...", flush=True)
     loop()
-
